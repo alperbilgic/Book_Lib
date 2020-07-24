@@ -26,7 +26,7 @@ SECRET_KEY = 'myt1r#mcj11jf8#&dhh@kds=fbj5*#k(^h(wa3^i_hvn0#$pv2'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1']
+ALLOWED_HOSTS = ['192.168.0.18', '127.0.0.1']
 
 
 # Application definition
@@ -51,6 +51,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -58,21 +59,24 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
 CORS_ORIGIN_WHITELIST = (
     'http://localhost:3000',
+    'http://192.168.31.233:3000',
     'http://127.0.0.1:3000',
+#     'http://192.168.31.233:8081'
 )
-
+#
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_EXPOSE_HEADERS = (
     'Access-Control-Allow-Origin: http://127.0.0.1:3000',
+    'Access-Control-Allow-Origin: http://192.168.0.18:3000',
 )
-
+#
 SESSION_COOKIE_HTTPONLY = False
+CSRF_COOKIE_HTTPONLY = False
 
 ROOT_URLCONF = 'Book_Lib_Project.urls'
 
@@ -161,9 +165,11 @@ DEFAULT_FROM_EMAIL = "Book App'den sevgilerle <noreply@bookapp.com>"
 
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ('knox.auth.TokenAuthentication',),
+    'DEFAULT_AUTHENTICATION_CLASSES': ('knox.auth.TokenAuthentication','rest_framework.authentication.SessionAuthentication'),
     'DATETIME_FORMAT': ("%m/%d/%Y %H:%M:%S",),
 
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': 54,
  
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',),
@@ -195,3 +201,7 @@ REST_KNOX = {
 }
 
 SITE_ID=1
+
+MEDIA_URL = "/media/"
+
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

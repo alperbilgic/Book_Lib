@@ -1,18 +1,19 @@
 from rest_framework import generics, viewsets, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework import filters
 from rest_framework import serializers as restSerializers
 from knox.auth import TokenAuthentication
 from rest_framework.decorators import action
-
+from django.db.models import Avg
 
 from . import serializers
 from . import models
-from. import mixins
+from . import mixins
+from . import permissions
 
 
-class UserProfileDetailViewSet(mixins.ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class UserProfileViewSet(mixins.ListDetailSerializerMixin, viewsets.ModelViewSet):
 #     """Handle creating and updating profiles"""
 
     list_serializer_class = serializers.UserProfileAPIListSerializer
@@ -20,7 +21,22 @@ class UserProfileDetailViewSet(mixins.ReadWriteSerializerMixin, viewsets.ModelVi
     queryset = models.UserProfileAPI.objects.all()
     lookup_field = 'username'
     authentication_classes = (TokenAuthentication, )
-    permission_classes = [AllowAny]
+    permission_classes_by_action = {
+        'create': [IsAdminUser],
+        'list': [AllowAny],
+        'retrieve': [AllowAny],
+        'update': [permissions.IsOwnProfileOrReadOnly],
+        'partial_update': [permissions.IsOwnProfileOrReadOnly],
+        'destroy': [permissions.IsOwnProfileOrReadOnly],
+    }
+
+    def get_permissions(self):
+        try:
+            # return permission_classes depending on `action`
+            return [permission() for permission in self.permission_classes_by_action[self.action]]
+        except KeyError:
+            # action is not set return default permission_classes
+            return [permission() for permission in self.permission_classes]
 
     @action(detail=True, methods=['PUT'])
     def follow(self, request, username=None):
@@ -56,7 +72,6 @@ class UserProfileListAPIView(generics.ListAPIView):     # search/filter nedeniyl
     queryset = models.UserProfileAPI.objects.all()
     serializer_class = serializers.UserProfileAPIListSerializer
     authentication_classes = (TokenAuthentication, )
-    permission_classes = [AllowAny]
 
     filter_backends = (filters.SearchFilter,filters.OrderingFilter)
     search_fields = ['first_name', 'email', 'username']
@@ -192,16 +207,23 @@ class UserProfileCurrentlyReadingAPIView(generics.ListAPIView):
         return currently_reading
 
 
-class BookListViewSet(mixins.ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class BookListViewSet(mixins.ListDetailSerializerMixin, viewsets.ModelViewSet):
 
     queryset = models.BookList.objects.all()
     list_serializer_class = serializers.BookListListSerializer
     detail_serializer_class = serializers.BookListDetailSerializer
+    permission_classes_by_action = {
+        'create': [permissions.IsAuthenticatedOrReadOnly],
+        'list': [AllowAny],
+        'retrieve': [AllowAny],
+        'update': [permissions.IsOwnerOrReadOnly],
+        'partial_update': [permissions.IsOwnerOrReadOnly],
+        'destroy': [permissions.IsOwnerOrReadOnly],
+    }
 
     def perform_create(self, serializer):
 
         request_user = self.request.user.userprofileapi
-
         if request_user.my_lists.filter(name=self.request.data["name"]).exists():
             raise restSerializers.ValidationError("You have a list with the same name!")
 
@@ -235,11 +257,27 @@ class BookListViewSet(mixins.ReadWriteSerializerMixin, viewsets.ModelViewSet):
             return Response(response, status=status.HTTP_400_BAD_REQUEST)
 
 
-class AbstractBookViewSet(mixins.ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class AbstractBookViewSet(mixins.ListDetailSerializerMixin, viewsets.ModelViewSet):
 
-    queryset = models.AbstractBook.objects.all()
+    queryset = models.AbstractBook.objects.annotate(avg_rating=Avg('ratings__stars'))
     list_serializer_class = serializers.AbstractBookListSerializer
     detail_serializer_class = serializers.AbstractBookDetailSerializer
+    permission_classes_by_action = {
+        'create': [IsAdminUser],
+        'list': [AllowAny],
+        'retrieve': [AllowAny],
+        'update': [IsAdminUser],
+        'partial_update': [IsAdminUser],
+        'destroy': [IsAdminUser],
+    }
+
+    def get_permissions(self):
+        try:
+            # return permission_classes depending on `action`
+            return [permission() for permission in self.permission_classes_by_action[self.action]]
+        except KeyError:
+            # action is not set return default permission_classes
+            return [permission() for permission in self.permission_classes]
 
     @action(detail=True, methods=['PUT'])
     def add_to_booklist(self, request, pk=None):
@@ -277,6 +315,34 @@ class AbstractBookViewSet(mixins.ReadWriteSerializerMixin, viewsets.ModelViewSet
         else:
 
             response = {'message': 'You need to provide a list'}
+            return Response(response, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['PUT'])
+    def add_to_my_books(self, request, pk=None):
+
+        try:
+            book = models.AbstractBook.objects.get(id=pk)
+            user = request.user.userprofileapi
+            book.reader.add(user)
+            book.save()
+            response = {'message': 'You added book to your books'}
+            return Response(response, status=status.HTTP_200_OK)
+        except:
+            response = {'message': 'Book cannot be added'}
+            return Response(response, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['PUT'])
+    def remove_from_my_books(self, request, pk=None):
+
+        try:
+            book = models.AbstractBook.objects.get(id=pk)
+            user = request.user.userprofileapi
+            book.reader.remove(user)
+            book.save()
+            response = {'message': 'You removed book from your books'}
+            return Response(response, status=status.HTTP_200_OK)
+        except:
+            response = {'message': 'Book cannot be removed'}
             return Response(response, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['PUT'])
@@ -396,6 +462,7 @@ class BookListAPIView(generics.ListCreateAPIView):
 
     serializer_class = serializers.BookSerializer
     queryset = models.Book.objects.all()
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def create(self, request):
 
@@ -411,13 +478,15 @@ class ReviewListAPIView(generics.ListCreateAPIView):
 
     serializer_class = serializers.ReviewSerializer
     queryset = models.Review.objects.all()
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def perform_create(self, serializer):
 
         request_user = self.request.user.userprofileapi
         kwarg_abstractbook = self.request.data["abstract_book"]
         abstractbook = models.AbstractBook.objects.get(pk=kwarg_abstractbook)
-
+        print(abstractbook.id)
+        print(request_user.username)
         if abstractbook.reviews.filter(user=request_user).exists():
             raise restSerializers.ValidationError("You have already reviewed this book!")
 
@@ -428,24 +497,65 @@ class ReviewDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
     serializer_class = serializers.ReviewSerializer
     queryset = models.Review.objects.all()
+    permission_classes = [permissions.IsOwnerOrReadOnly]
 
 
-class AuthorListAPIView(generics.ListCreateAPIView):
+class AuthorViewSet(mixins.ListDetailSerializerMixin, viewsets.ModelViewSet):
 
-    serializer_class = serializers.AuthorListSerializer
+    list_serializer_class = serializers.AuthorListSerializer
+    detail_serializer_class = serializers.AuthorDetailSerializer
     queryset = models.Author.objects.all()
+    permission_classes_by_action = {
+        'create': [IsAdminUser],
+        'list': [AllowAny],
+        'retrieve': [AllowAny],
+        'update': [IsAdminUser],
+        'partial_update': [IsAdminUser],
+        'destroy': [IsAdminUser],
+    }
 
+    def get_permissions(self):
+        try:
+            # return permission_classes depending on `action`
+            return [permission() for permission in self.permission_classes_by_action[self.action]]
+        except KeyError:
+            # action is not set return default permission_classes
+            return [permission() for permission in self.permission_classes]
 
-class AuthorDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    @action(detail=True, methods=['PUT'])
+    def follow(self, request, pk=None):
 
-    serializer_class = serializers.AuthorDetailSerializer
-    queryset = models.Author.objects.all()
+        try:
+            author = models.Author.objects.get(id=pk)
+            user = request.user.userprofileapi
+            author.followers.add(user)
+            author.save()
+            response = {'message': 'You followed the author'}
+            return Response(response, status=status.HTTP_200_OK)
+        except:
+            response = {'message': 'Author cannot be followed'}
+            return Response(response, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['PUT'])
+    def unfollow(self, request, pk=None):
+
+        try:
+            author = models.Author.objects.get(id=pk)
+            user = request.user.userprofileapi
+            author.followers.remove(user)
+            author.save()
+            response = {'message': 'You unfollowed the author'}
+            return Response(response, status=status.HTTP_200_OK)
+        except:
+            response = {'message': 'Author cannot be unfollowed'}
+            return Response(response, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RatingCreateAPIView(generics.CreateAPIView):
 
     serializer_class = serializers.RatingSerializer
     queryset = models.Rating.objects.all()
+    permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
 
@@ -463,12 +573,14 @@ class RatingDetailsAPIView(generics.RetrieveUpdateDestroyAPIView):
 
     serializer_class = serializers.RatingSerializer
     queryset = models.Rating.objects.all()
+    permission_classes = [permissions.IsOwnerOrReadOnly]
 
 
 class UpDownRatingCreateAPIView(generics.CreateAPIView):
 
     serializer_class = serializers.UpDownRatingSerializer
     queryset = models.UpDownRating.objects.all()
+    permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
 
@@ -508,5 +620,28 @@ class UpDownRatingDetailsAPIView(generics.RetrieveUpdateDestroyAPIView):
 
     serializer_class = serializers.UpDownRatingSerializer
     queryset = models.UpDownRating.objects.all()
+    permission_classes = [permissions.IsOwnerOrReadOnly]
 
 
+class CategoryViewSet(mixins.ListDetailSerializerMixin, viewsets.ModelViewSet):
+
+    lookup_field = 'slug'
+    list_serializer_class = serializers.CategoryListSerializer
+    detail_serializer_class = serializers.CategoryDetailSerializer
+    permission_classes_by_action = {
+        'create': [IsAdminUser],
+        'list': [AllowAny],
+        'retrieve': [AllowAny],
+        'update': [IsAdminUser],
+        'partial_update': [IsAdminUser],
+        'destroy': [IsAdminUser],
+    }
+    queryset = models.Category.objects.all()
+
+    def get_permissions(self):
+        try:
+            # return permission_classes depending on `action`
+            return [permission() for permission in self.permission_classes_by_action[self.action]]
+        except KeyError:
+            # action is not set return default permission_classes
+            return [permission() for permission in self.permission_classes]

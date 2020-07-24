@@ -2,26 +2,21 @@ from django.contrib import admin
 from django.urls import path
 from django.conf.urls import include
 from .views import (BookListViewSet, AbstractBookViewSet, ReviewListAPIView, ReviewDetailAPIView,
-                    UserProfileDetailViewSet, UserProfileMyListsAPIView, UserProfileReadListsAPIView,
+                    UserProfileViewSet, UserProfileMyListsAPIView, UserProfileReadListsAPIView,
                     UserProfileMyBooksAPIView, UserProfileLibraryAPIView, RatingCreateAPIView, RatingDetailsAPIView,
                     UserProfileReviewsAPIView, UserProfileLikesAPIView, UserProfileFollowersAPIView,
                     UserProfileFollowingAPIView, BookListAPIView, UserProfileFavouritesAPIView,
-                    UserProfileCurrentlyReadingAPIView, AuthorDetailAPIView, AuthorListAPIView,
+                    UserProfileCurrentlyReadingAPIView, CategoryViewSet, AuthorViewSet,
                     UpDownRatingCreateAPIView, UpDownRatingDetailsAPIView )
 from rest_framework import routers
 
 router = routers.DefaultRouter()
-router.register('users', UserProfileDetailViewSet)
+router.register('users', UserProfileViewSet)
 router.register('booklists', BookListViewSet)
 router.register('abstractbooks', AbstractBookViewSet)
+router.register('authors', AuthorViewSet)
+router.register('categories', CategoryViewSet)
 
-
-user_detail = UserProfileDetailViewSet.as_view({
-    'get': 'retrieve',
-    'put': 'update',
-    'patch': 'partial_update',
-    'delete': 'destroy'
-})
 
 urlpatterns = [
     path('books/', BookListAPIView.as_view(), name="book_list"),
@@ -31,8 +26,6 @@ urlpatterns = [
     path('ratings/<int:pk>/', RatingDetailsAPIView.as_view(), name="rating_detail"),
     path('updownratings/', UpDownRatingCreateAPIView.as_view(), name="up_down_rating_list"),
     path('updownratings/<int:pk>/', UpDownRatingDetailsAPIView.as_view(), name="up_down_rating_detail"),
-    path('authors/', AuthorListAPIView.as_view(), name="author_list"),
-    path('authors/<int:pk>/', AuthorDetailAPIView.as_view(), name="author_detail"),
     path('users/<str:username>/mylists', UserProfileMyListsAPIView.as_view(), name="user_mylists"),
     path('users/<str:username>/readlist', UserProfileReadListsAPIView.as_view(), name="user_readlist"),
     path('users/<str:username>/mybooks', UserProfileMyBooksAPIView.as_view(), name="user_mybooks"),
